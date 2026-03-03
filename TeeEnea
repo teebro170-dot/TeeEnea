@@ -1,0 +1,121 @@
+//--- Include necessary libraries
+#include <Trade\Trade.mqh>
+
+//--- Bot Name and Creator Name
+#define BOT_NAME "TEE ENEA EMPIRE PC"
+#define CREATOR_NAME "TEE ENEA EA"
+
+//--- Indicator handles
+int wma5_handle, wma12_handle, ema16_handle, ema30_handle, rsi_handle;
+CTrade trade; // Trade object for order management
+
+//+------------------------------------------------------------------+
+//| Expert initialization function                                   |
+//+------------------------------------------------------------------+
+int OnInit()
+{
+    // Initialize indicators
+    wma5_handle = iMA(_Symbol, _Period, 5, 0, MODE_LWMA, PRICE_CLOSE);
+    wma12_handle = iMA(_Symbol, _Period, 12, 0, MODE_LWMA, PRICE_CLOSE);
+    ema16_handle = iMA(_Symbol, _Period, 16, 0, MODE_EMA, PRICE_CLOSE);
+    ema30_handle = iMA(_Symbol, _Period, 30, 0, MODE_EMA, PRICE_CLOSE);
+    rsi_handle = iRSI(_Symbol, _Period, 19, PRICE_CLOSE);
+    
+    // Check if indicators are initialized correctly
+    if (wma5_handle == INVALID_HANDLE || wma12_handle == INVALID_HANDLE ||
+        ema16_handle == INVALID_HANDLE || ema30_handle == INVALID_HANDLE || rsi_handle == INVALID_HANDLE)
+    {
+        Print("Error initializing indicators");
+        return INIT_FAILED;
+    }
+    
+    // Display bot name and creator
+    Comment(BOT_NAME + " | : " + CREATOR_NAME);
+    
+    return INIT_SUCCEEDED;
+}
+
+//+------------------------------------------------------------------+
+//| Expert tick function                                             |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+    double wma5[3], wma12[3], ema16[3], ema30[3], rsi[3];
+
+    // Copy indicator data (checking the return value for success)
+    if (CopyBuffer(wma5_handle, 0, 0, 3, wma5) <= 0 ||
+        CopyBuffer(wma12_handle, 0, 0, 3, wma12) <= 0 ||
+        CopyBuffer(ema16_handle, 0, 0, 3, ema16) <= 0 ||
+        CopyBuffer(ema30_handle, 0, 0, 3, ema30) <= 0 ||
+        CopyBuffer(rsi_handle, 0, 0, 3, rsi) <= 0)
+    {
+        Print("Error copying buffer data");
+        return;
+    }
+
+    // Define trading conditions here
+    double currentWMA5 = wma5[0];
+    double currentWMA12 = wma12[0];
+    double currentEMA16 = ema16[0];
+    double currentEMA30 = ema30[0];
+    double currentRSI = rsi[0];
+
+    // Check the number of open positions
+    if (PositionsTotal() < 15) // Limit to a maximum of 15 open positions
+    {
+        // Example trade conditions (simplified)
+        if (currentWMA5 > currentEMA16 && currentRSI > 50)
+        {
+            OpenTrade(ORDER_TYPE_BUY);
+        }
+        else if (currentWMA5 < currentEMA16 && currentRSI < 50)
+        {
+            OpenTrade(ORDER_TYPE_SELL);
+        }
+    }
+
+    // Close trades based on conditions
+    CloseTradesIfExitConditionMet(currentWMA5, currentEMA16);
+}
+
+//+------------------------------------------------------------------+
+//| Opens a trade of specified type                                  |
+//+------------------------------------------------------------------+
+void OpenTrade(int trade_type)
+{
+    double price = (trade_type == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    double sl = (trade_type == ORDER_TYPE_BUY) ? price - 400 * _Point : price + 400 * _Point; // SL = 100 pips
+    double tp = (trade_type == ORDER_TYPE_BUY) ? price + 850 * _Point : price - 850 * _Point; // TP = 600 pips
+
+    trade.SetExpertMagicNumber(123456); // Set the magic number for the EA
+    if (trade_type == ORDER_TYPE_BUY)
+    {
+        trade.Buy(0.01, _Symbol, price, sl, tp, BOT_NAME + " | Creator: " + CREATOR_NAME);
+    }
+    else if (trade_type == ORDER_TYPE_SELL)
+    {
+        trade.Sell(0.01, _Symbol, price, sl, tp, BOT_NAME + " | Creator: " + CREATOR_NAME);
+    }
+}
+
+//+------------------------------------------------------------------+
+//| Closes trades if exit conditions are met                         |
+//+------------------------------------------------------------------+
+void CloseTradesIfExitConditionMet(double currentWMA5, double currentEMA16)
+{
+    for (int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        ulong ticket = PositionGetTicket(i); // Use 'ulong' for ticket numbers
+        if (PositionSelectByTicket(ticket) && PositionGetInteger(POSITION_MAGIC) == 123456) // Magic number matching
+        {
+            ulong trade_type = PositionGetInteger(POSITION_TYPE);
+            double close_price = (trade_type == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+            
+            if ((trade_type == ORDER_TYPE_BUY && currentWMA5 < currentEMA16) ||
+                (trade_type == ORDER_TYPE_SELL && currentWMA5 > currentEMA16))
+            {
+                trade.PositionClose(ticket); // Close position using the ticket
+            }
+        }
+    }
+}
